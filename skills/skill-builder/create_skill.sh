@@ -43,11 +43,66 @@ fi
 cat >"$skill_file" <<EOF
 ---
 name: $slug
+version: 0.1.0
 description: $description
+changelog: CHANGELOG.md
+allowed-tools: Bash, Read, Write, Edit
 ---
 
-Describe the workflow this skill unlocks. Include concrete commands, expected inputs,
-and success criteria so Codex can execute the process reliably.
+# ${slug^}
+
+## When to Use This Skill
+
+[Describe when this skill should be invoked]
+
+## What It Does
+
+[Describe what the skill accomplishes]
+
+## Instructions
+
+[Step-by-step instructions for using this skill]
+
+1. Step one
+2. Step two
+3. Step three
+
+## Examples
+
+[Show examples of the skill in action]
+
+## Limitations
+
+[Describe what the skill cannot do]
 EOF
 
-echo "Created $skill_file"
+# Create CHANGELOG.md
+changelog_file="$skill_dir/CHANGELOG.md"
+cat >"$changelog_file" <<EOF
+# Changelog - $slug
+
+All notable changes to this skill will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [0.1.0] - $(date +%Y-%m-%d)
+
+### Added
+- Initial version
+- $description
+
+## [Unreleased]
+
+### Planned
+- [Future enhancements]
+EOF
+
+echo "Created skill at $skill_dir"
+echo "  - $skill_file"
+echo "  - $changelog_file"
+echo ""
+echo "Next steps:"
+echo "  1. Edit $skill_file to add detailed instructions"
+echo "  2. Run: ./skillstack bootstrap"
+echo "  3. Test: skillstack use $slug"

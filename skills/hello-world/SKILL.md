@@ -1,5 +1,6 @@
 ---
 name: hello-world
+version: 1.0.0
 description: Simple prompt that greets the user and confirms Skillstack wiring.
 ---
 

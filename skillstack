@@ -17,8 +17,25 @@ def repo_skills_dir() -> Path:
     return Path(__file__).resolve().parent / "skills"
 
 
-def target_skills_dir() -> Path:
-    return Path.home() / ".codex" / "skills"
+def target_skills_dir(target: str = "codex") -> Path:
+    """
+    Get the skills directory for a specific target.
+
+    Args:
+        target: "codex", "claude", or "shared"
+
+    Returns:
+        Path to the target skills directory
+    """
+    if target == "codex":
+        return Path.home() / ".codex" / "skills"
+    elif target == "claude":
+        return Path.home() / ".claude" / "skills"
+    elif target == "shared":
+        # Use .claude as the standard shared location
+        return Path.home() / ".claude" / "skills"
+    else:
+        raise ValueError(f"Unknown target: {target}")
 
 
 def discover_skills(skills_root: Path) -> list[Path]:
@@ -41,14 +58,27 @@ def install_skills(skills: Iterable[Path], destination_root: Path) -> list[Path]
     return installed_paths
 
 
-def bootstrap_cmd(_: argparse.Namespace) -> None:
+def bootstrap_cmd(args: argparse.Namespace) -> None:
+    """Bootstrap skills to target location(s)."""
     skills_root = repo_skills_dir()
     skills = discover_skills(skills_root)
     if not skills:
         raise SystemExit(f"No skills found in {skills_root}")
-    installed = install_skills(skills, target_skills_dir())
-    for path in installed:
-        print(f"Installed {path.name} -> {path}")
+
+    target = getattr(args, 'target', 'both')
+    targets = []
+
+    if target == "both":
+        targets = ["codex", "claude"]
+    else:
+        targets = [target]
+
+    for t in targets:
+        dest = target_skills_dir(t)
+        installed = install_skills(skills, dest)
+        print(f"\nInstalled to {t}:")
+        for path in installed:
+            print(f"  ✓ {path.name} -> {path}")
 
 
 def _parse_skill_file(skill_path: Path) -> Tuple[Dict[str, str], str]:
@@ -84,26 +114,41 @@ def parse_skill_frontmatter(skill_path: Path) -> Tuple[str, str]:
 
 def load_skill(skill_slug: str) -> Tuple[str, str, str, str]:
     """Return (slug, name, description, body) for an installed skill."""
-    skill_path = target_skills_dir() / skill_slug
-    if not skill_path.exists():
-        raise FileNotFoundError(
-            f"Skill '{skill_slug}' is not installed in {target_skills_dir()}"
-        )
-    metadata, body = _parse_skill_file(skill_path)
-    return (
-        skill_slug,
-        metadata.get("name", skill_path.name),
-        metadata.get("description", ""),
-        body or "This skill has no prompt body.",
+    # Try multiple locations
+    for target in ["claude", "codex"]:
+        skill_path = target_skills_dir(target) / skill_slug
+        if skill_path.exists():
+            metadata, body = _parse_skill_file(skill_path)
+            return (
+                skill_slug,
+                metadata.get("name", skill_path.name),
+                metadata.get("description", ""),
+                body or "This skill has no prompt body.",
+            )
+
+    # If not found anywhere
+    raise FileNotFoundError(
+        f"Skill '{skill_slug}' is not installed in ~/.claude/skills or ~/.codex/skills"
     )
 
 
 def list_cmd(_: argparse.Namespace) -> None:
-    skills = discover_skills(target_skills_dir())
-    if not skills:
+    # Check both locations
+    all_skills = []
+    seen = set()
+
+    for target in ["claude", "codex"]:
+        skills = discover_skills(target_skills_dir(target))
+        for skill in skills:
+            if skill.name not in seen:
+                all_skills.append(skill)
+                seen.add(skill.name)
+
+    if not all_skills:
         print("No skills installed. Run `skillstack bootstrap` first.")
         return
-    for skill in sorted(skills, key=lambda path: path.name):
+
+    for skill in sorted(all_skills, key=lambda path: path.name):
         skill_name, description = parse_skill_frontmatter(skill)
         if description:
             print(f"- {skill_name}: {description}")
@@ -123,31 +168,63 @@ def use_cmd(args: argparse.Namespace) -> None:
     print("\n" + body)
 
 
+def init_cmd(args: argparse.Namespace) -> None:
+    """Copy AGENTS.md template to current working directory."""
+    template_path = Path(__file__).resolve().parent / "templates" / "AGENTS.md"
+    target_path = Path.cwd() / "AGENTS.md"
+
+    if not template_path.exists():
+        raise SystemExit(f"Template not found: {template_path}")
+
+    if target_path.exists():
+        print(f"AGENTS.md already exists in {Path.cwd()}")
+        print("Skipping. Remove the existing file first if you want to reinitialize.")
+        return
+
+    shutil.copy(template_path, target_path)
+    print(f"✓ Created AGENTS.md in {Path.cwd()}")
+    print("\nNext steps:")
+    print("  1. Codex CLI will automatically discover and use skills based on AGENTS.md")
+    print("  2. Check available skills: ~/.skillstack/skillstack list")
+    print("  3. Start using Codex in this directory!")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="skillstack",
         description=(
-            "Skillstack installs skills for Codex. "
+            "Skillstack installs skills for Codex CLI and Claude Code. "
             "Use this CLI to discover, install, and manage skill bundles."
         ),
     )
     subparsers = parser.add_subparsers(dest="command")
     bootstrap_parser = subparsers.add_parser(
         "bootstrap",
-        help="Install bundled skills into ~/.codex/skills",
+        help="Install bundled skills into target directory",
+    )
+    bootstrap_parser.add_argument(
+        "--target",
+        choices=["codex", "claude", "both"],
+        default="both",
+        help="Target location (default: both)",
     )
     bootstrap_parser.set_defaults(func=bootstrap_cmd)
     list_parser = subparsers.add_parser(
         "list",
-        help="List installed skills from ~/.codex/skills",
+        help="List installed skills from ~/.claude/skills and ~/.codex/skills",
     )
     list_parser.set_defaults(func=list_cmd)
     use_parser = subparsers.add_parser(
         "use",
         help="Print the prompt/instructions for a skill slug",
     )
-    use_parser.add_argument("slug", help="Skill slug present in ~/.codex/skills")
+    use_parser.add_argument("slug", help="Skill slug present in ~/.claude/skills or ~/.codex/skills")
     use_parser.set_defaults(func=use_cmd)
+    init_parser = subparsers.add_parser(
+        "init",
+        help="Copy AGENTS.md template to current directory for Codex CLI",
+    )
+    init_parser.set_defaults(func=init_cmd)
     return parser
 
 

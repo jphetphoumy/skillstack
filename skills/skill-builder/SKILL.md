@@ -1,5 +1,6 @@
 ---
 name: skill-builder
+version: 1.0.0
 description: This skill exists to create new skills via the bundled CLI workflow.
 ---
 
