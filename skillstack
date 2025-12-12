@@ -109,9 +109,20 @@ def bootstrap_cmd(args: argparse.Namespace) -> None:
 
     # Filter skills if specific ones were requested
     requested_skills = getattr(args, 'skills', [])
+    skipped_skills = getattr(args, 'skip', [])
+
+    # Validate that skills and skip are not both specified
+    if requested_skills and skipped_skills:
+        print("ERROR: Cannot use both positional skills and --skip at the same time.")
+        print("Use either:")
+        print("  - Specify skills to install: skillstack bootstrap skill1 skill2")
+        print("  - Skip specific skills: skillstack bootstrap --skip skill1 skill2")
+        raise SystemExit(1)
+
+    available_skill_names = {skill.name for skill in all_skills}
+
     if requested_skills:
-        # Map skill names to skill paths
-        available_skill_names = {skill.name for skill in all_skills}
+        # Filter to only requested skills
         invalid_skills = [name for name in requested_skills if name not in available_skill_names]
 
         if invalid_skills:
@@ -121,8 +132,24 @@ def bootstrap_cmd(args: argparse.Namespace) -> None:
             print(f"\nAvailable skills: {', '.join(sorted(available_skill_names))}")
             raise SystemExit(1)
 
-        # Filter to only requested skills
         skills = [skill for skill in all_skills if skill.name in requested_skills]
+    elif skipped_skills:
+        # Filter out skipped skills
+        invalid_skills = [name for name in skipped_skills if name not in available_skill_names]
+
+        if invalid_skills:
+            print(f"WARNING: The following skills to skip were not found:")
+            for name in invalid_skills:
+                print(f"  - {name}")
+            print(f"\nAvailable skills: {', '.join(sorted(available_skill_names))}")
+
+        skills = [skill for skill in all_skills if skill.name not in skipped_skills]
+
+        if not skills:
+            print("ERROR: All skills were skipped. Nothing to install.")
+            raise SystemExit(1)
+
+        print(f"Skipping: {', '.join(skipped_skills)}")
     else:
         skills = all_skills
 
@@ -308,6 +335,12 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["codex", "claude", "both", "auto"],
         default="auto",
         help="Target location (default: auto-detect)",
+    )
+    bootstrap_parser.add_argument(
+        "--skip",
+        nargs="+",
+        metavar="SKILL",
+        help="Skip specific skill(s) during installation",
     )
     bootstrap_parser.add_argument(
         "--force",
