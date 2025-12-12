@@ -6,7 +6,7 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion
 
 # Molecule Testing Framework Initializer
 
-This skill sets up the complete Molecule testing framework for Ansible roles using an Ansible-native Docker approach.
+This skill sets up the Molecule testing framework for Ansible roles using Docker containers and Ansible playbooks (no Molecule plugins required).
 
 ## When to Use This Skill
 
@@ -75,7 +75,6 @@ In the role root directory:
 collections:
   - name: community.docker
     version: ">=3.10.4"
-  - name: ansible.posix
 ```
 
 ### Step 5: Create molecule.yml
@@ -91,15 +90,92 @@ platforms:
     image: <selected-docker-image>
 ```
 
+**IMPORTANT:** DO NOT USE DELEGATED DRIVER WHEN CREATING THE molecule.yml.
+
 ### Step 6: Create create.yml
 
-Create the container creation playbook with:
-- Docker container creation using `community.docker.docker_container`
-- Dynamic inventory generation
-- Container health validation
-- Inventory refresh logic
+Create the container creation playbook (Ansible-managed inventory using `community.docker` connection):
+```yaml
+---
+- name: Create
+  hosts: localhost
+  gather_facts: false
+  vars:
+    molecule_inventory:
+      all:
+        hosts: {}
+        molecule: {}
+  tasks:
+    - name: Create a container
+      community.docker.docker_container:
+        name: "{{ item.name }}"
+        image: "{{ item.image }}"
+        state: started
+        command: sleep 1d
+        log_driver: json-file
+      register: result
+      loop: "{{ molecule_yml.platforms }}"
 
-Use the template from the reference documentation.
+    - name: Print some info
+      ansible.builtin.debug:
+        msg: "{{ result.results }}"
+
+    - name: Fail if container is not running
+      when: >
+        item.container.State.ExitCode != 0 or
+        not item.container.State.Running
+      ansible.builtin.include_tasks:
+        file: tasks/create-fail.yml
+      loop: "{{ result.results }}"
+      loop_control:
+        label: "{{ item.container.Name }}"
+
+    - name: Add container to molecule_inventory
+      vars:
+        inventory_partial_yaml: |
+          all:
+            children:
+              molecule:
+                hosts:
+                  "{{ item.name }}":
+                    ansible_connection: community.docker.docker
+      ansible.builtin.set_fact:
+        molecule_inventory: >
+          {{ molecule_inventory | combine(inventory_partial_yaml | from_yaml, recursive=true) }}
+      loop: "{{ molecule_yml.platforms }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Dump molecule_inventory
+      ansible.builtin.copy:
+        content: |
+          {{ molecule_inventory | to_yaml }}
+        dest: "{{ molecule_ephemeral_directory }}/inventory/molecule_inventory.yml"
+        mode: "0600"
+
+    - name: Force inventory refresh
+      ansible.builtin.meta: refresh_inventory
+
+    - name: Fail if molecule group is missing
+      ansible.builtin.assert:
+        that: "'molecule' in groups"
+        fail_msg: |
+          molecule group was not found inside inventory groups: {{ groups }}
+      run_once: true  # noqa: run-once[task]
+
+- name: Validate that inventory was refreshed
+  hosts: molecule
+  gather_facts: false
+  tasks:
+    - name: Check uname
+      ansible.builtin.raw: uname -a
+      register: result
+      changed_when: false
+
+    - name: Display uname info
+      ansible.builtin.debug:
+        msg: "{{ result.stdout }}"
+```
 
 ### Step 7: Create create-fail.yml
 
@@ -110,7 +186,7 @@ Create error handling in `molecule/<scenario-name>/tasks/create-fail.yml`:
   ansible.builtin.command:
     cmd: >-
       docker logs
-      {{ item.stdout_lines[0] }}
+      {{ item.container.Name }}
   changed_when: false
   register: logfile_cmd
 
@@ -121,7 +197,7 @@ Create error handling in `molecule/<scenario-name>/tasks/create-fail.yml`:
 
 ### Step 8: Create converge.yml
 
-Create the role application playbook using the namespace.role_name format:
+Create a basic converge playbook (raw command, no SSH/Python dependency):
 ```yaml
 ---
 - name: Fail if molecule group is missing
@@ -139,12 +215,16 @@ Create the role application playbook using the namespace.role_name format:
 
 - name: Converge
   hosts: molecule
-  gather_facts: true
-  become: true
+  gather_facts: false
   tasks:
-    - name: Include <namespace>.<role_name> role
-      ansible.builtin.include_role:
-        name: "<namespace>.<role_name>"
+    - name: Check uname
+      ansible.builtin.raw: uname -a
+      register: result
+      changed_when: false
+
+    - name: Print some info
+      ansible.builtin.assert:
+        that: result.stdout is ansible.builtin.search("^Linux")
 ```
 
 ### Step 9: Create verify.yml
@@ -155,7 +235,6 @@ Ask the user what to verify, or create a basic template:
 - name: Verify
   hosts: molecule
   gather_facts: false
-  become: true
   tasks:
     - name: Placeholder verification task
       ansible.builtin.debug:
@@ -197,6 +276,8 @@ ansible-galaxy collection install -r requirements.yml
 molecule test
 ```
 
+**IMPORTANT:** Setting up molecule is only done if molecule test return no errors
+
 ## TDD Workflow Guidance
 
 After setup, guide the user on the TDD workflow:
@@ -225,6 +306,7 @@ If errors occur:
 3. Ensure collections are installed
 4. Check YAML syntax in all files
 5. Review container logs if creation fails
+6. Avoid systemd/SSH expectations; the provided create play uses `community.docker.docker` to bypass SSH in lightweight images.
 
 ## Success Criteria
 
