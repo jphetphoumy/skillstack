@@ -1,0 +1,164 @@
+#!/usr/bin/env -S uv run --script
+"""
+Skillstack CLI entry point.
+
+Run `./skillstack --help` to learn how the tool helps install skills for Codex.
+"""
+
+from __future__ import annotations
+
+import argparse
+import shutil
+from pathlib import Path
+from typing import Iterable, Tuple, Dict
+
+
+def repo_skills_dir() -> Path:
+    return Path(__file__).resolve().parent / "skills"
+
+
+def target_skills_dir() -> Path:
+    return Path.home() / ".codex" / "skills"
+
+
+def discover_skills(skills_root: Path) -> list[Path]:
+    if not skills_root.exists():
+        return []
+    return [
+        entry
+        for entry in skills_root.iterdir()
+        if entry.is_dir() and (entry / "SKILL.md").exists()
+    ]
+
+
+def install_skills(skills: Iterable[Path], destination_root: Path) -> list[Path]:
+    destination_root.mkdir(parents=True, exist_ok=True)
+    installed_paths: list[Path] = []
+    for skill_path in skills:
+        target_path = destination_root / skill_path.name
+        shutil.copytree(skill_path, target_path, dirs_exist_ok=True)
+        installed_paths.append(target_path)
+    return installed_paths
+
+
+def bootstrap_cmd(_: argparse.Namespace) -> None:
+    skills_root = repo_skills_dir()
+    skills = discover_skills(skills_root)
+    if not skills:
+        raise SystemExit(f"No skills found in {skills_root}")
+    installed = install_skills(skills, target_skills_dir())
+    for path in installed:
+        print(f"Installed {path.name} -> {path}")
+
+
+def _parse_skill_file(skill_path: Path) -> Tuple[Dict[str, str], str]:
+    skill_file = skill_path / "SKILL.md"
+    if not skill_file.exists():
+        raise FileNotFoundError(f"Missing SKILL.md in {skill_path}")
+    lines = skill_file.read_text(encoding="utf-8").splitlines()
+    if not lines or lines[0].strip() != "---":
+        return {}, "\n".join(lines).strip()
+    metadata: dict[str, str] = {}
+    idx = 1
+    while idx < len(lines):
+        stripped = lines[idx].strip()
+        if stripped == "---":
+            idx += 1
+            break
+        if stripped and ":" in stripped:
+            key, value = stripped.split(":", 1)
+            metadata[key.strip()] = value.strip()
+        idx += 1
+    body = "\n".join(lines[idx:]).strip()
+    return metadata, body
+
+
+def parse_skill_frontmatter(skill_path: Path) -> Tuple[str, str]:
+    """Extract name/description from the SKILL.md frontmatter."""
+    try:
+        metadata, _ = _parse_skill_file(skill_path)
+    except FileNotFoundError:
+        return skill_path.name, ""
+    return metadata.get("name", skill_path.name), metadata.get("description", "")
+
+
+def load_skill(skill_slug: str) -> Tuple[str, str, str, str]:
+    """Return (slug, name, description, body) for an installed skill."""
+    skill_path = target_skills_dir() / skill_slug
+    if not skill_path.exists():
+        raise FileNotFoundError(
+            f"Skill '{skill_slug}' is not installed in {target_skills_dir()}"
+        )
+    metadata, body = _parse_skill_file(skill_path)
+    return (
+        skill_slug,
+        metadata.get("name", skill_path.name),
+        metadata.get("description", ""),
+        body or "This skill has no prompt body.",
+    )
+
+
+def list_cmd(_: argparse.Namespace) -> None:
+    skills = discover_skills(target_skills_dir())
+    if not skills:
+        print("No skills installed. Run `skillstack bootstrap` first.")
+        return
+    for skill in sorted(skills, key=lambda path: path.name):
+        skill_name, description = parse_skill_frontmatter(skill)
+        if description:
+            print(f"- {skill_name}: {description}")
+        else:
+            print(f"- {skill_name}")
+
+
+def use_cmd(args: argparse.Namespace) -> None:
+    slug = args.slug
+    try:
+        _slug, name, description, body = load_skill(slug)
+    except FileNotFoundError as exc:
+        raise SystemExit(str(exc))
+    print(f"{name}")
+    if description:
+        print(description)
+    print("\n" + body)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="skillstack",
+        description=(
+            "Skillstack installs skills for Codex. "
+            "Use this CLI to discover, install, and manage skill bundles."
+        ),
+    )
+    subparsers = parser.add_subparsers(dest="command")
+    bootstrap_parser = subparsers.add_parser(
+        "bootstrap",
+        help="Install bundled skills into ~/.codex/skills",
+    )
+    bootstrap_parser.set_defaults(func=bootstrap_cmd)
+    list_parser = subparsers.add_parser(
+        "list",
+        help="List installed skills from ~/.codex/skills",
+    )
+    list_parser.set_defaults(func=list_cmd)
+    use_parser = subparsers.add_parser(
+        "use",
+        help="Print the prompt/instructions for a skill slug",
+    )
+    use_parser.add_argument("slug", help="Skill slug present in ~/.codex/skills")
+    use_parser.set_defaults(func=use_cmd)
+    return parser
+
+
+def main() -> None:
+    parser = build_parser()
+    args = parser.parse_args()
+    if hasattr(args, "func"):
+        args.func(args)
+    else:
+        parser.print_help()
+
+
+if __name__ == "__main__":
+    main()
