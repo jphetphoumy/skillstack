@@ -8,6 +8,7 @@ Run `./skillstack --help` to learn how the tool helps install skills for Codex.
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 from pathlib import Path
 from typing import Iterable, Tuple, Dict
@@ -17,16 +18,47 @@ def repo_skills_dir() -> Path:
     return Path(__file__).resolve().parent / "skills"
 
 
-def target_skills_dir(target: str = "codex") -> Path:
+def detect_cli() -> str:
+    """
+    Auto-detect which CLI is currently running.
+
+    Returns:
+        "claude" if running in Claude Code, "codex" if running in Codex CLI
+    """
+    # Claude Code sets CLAUDE_CODE_ENTRYPOINT environment variable
+    if os.environ.get("CLAUDE_CODE_ENTRYPOINT"):
+        return "claude"
+
+    # Codex CLI sets CODEX_MANAGED_BY_NPM=1 environment variable
+    if os.environ.get("CODEX_MANAGED_BY_NPM") == "1":
+        return "codex"
+
+    # If neither is detected, check which directory exists
+    claude_dir = Path.home() / ".claude" / "skills"
+    codex_dir = Path.home() / ".codex" / "skills"
+
+    if claude_dir.exists() and not codex_dir.exists():
+        return "claude"
+    elif codex_dir.exists() and not claude_dir.exists():
+        return "codex"
+
+    # Default to Codex CLI if can't determine
+    return "codex"
+
+
+def target_skills_dir(target: str = "auto") -> Path:
     """
     Get the skills directory for a specific target.
 
     Args:
-        target: "codex", "claude", or "shared"
+        target: "codex", "claude", "shared", or "auto" (auto-detect)
 
     Returns:
         Path to the target skills directory
     """
+    if target == "auto":
+        target = detect_cli()
+
     if target == "codex":
         return Path.home() / ".codex" / "skills"
     elif target == "claude":
@@ -65,10 +97,14 @@ def bootstrap_cmd(args: argparse.Namespace) -> None:
     if not skills:
         raise SystemExit(f"No skills found in {skills_root}")
 
-    target = getattr(args, 'target', 'both')
+    target = getattr(args, 'target', 'auto')
     targets = []
 
-    if target == "both":
+    if target == "auto":
+        detected = detect_cli()
+        targets = [detected]
+        print(f"Auto-detected CLI: {detected}")
+    elif target == "both":
         targets = ["codex", "claude"]
     else:
         targets = [target]
@@ -204,9 +240,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     bootstrap_parser.add_argument(
         "--target",
-        choices=["codex", "claude", "both"],
-        default="both",
-        help="Target location (default: both)",
+        choices=["codex", "claude", "both", "auto"],
+        default="auto",
+        help="Target location (default: auto-detect)",
     )
     bootstrap_parser.set_defaults(func=bootstrap_cmd)
     list_parser = subparsers.add_parser(
