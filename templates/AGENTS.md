@@ -5,7 +5,7 @@ This project uses **Skillstack** - a skills management system for AI agents.
 ## Skills System Overview
 
 **Skills** are reusable automation for common tasks located in:
-- **Codex CLI**: `~/.codex/skills/`
+- **Codex CLI (default location)**: `~/.codex/skills/`
 - **Claude Code**: `~/.claude/skills/`
 
 Each skill is a directory with a `SKILL.md` file containing instructions.
@@ -18,8 +18,9 @@ Each skill is a directory with a `SKILL.md` file containing instructions.
 # If skillstack is installed:
 ~/.skillstack/skillstack list
 
-# Or read directly (both Codex and Claude Code):
-ls -la ~/.claude/skills/
+# Or read directly:
+ls -la ~/.codex/skills/
+# (Use ~/.claude/skills/ only when working inside Claude Code)
 ```
 
 ## Using a Skill
@@ -31,10 +32,9 @@ When you identify a relevant skill for the task:
    # Option 1: Using skillstack CLI
    ~/.skillstack/skillstack use <skill-name>
 
-   # Option 2: Read SKILL.md directly
-   cat ~/.claude/skills/<skill-name>/SKILL.md
-   # or
+   # Option 2: Read SKILL.md directly (Codex installs live in ~/.codex)
    cat ~/.codex/skills/<skill-name>/SKILL.md
+   # For Claude Code contexts, read from ~/.claude/skills/<skill-name>/SKILL.md
    ```
 
 2. **Read and follow SKILL.md**:
@@ -95,7 +95,7 @@ You think:
   2. Run: ~/.skillstack/skillstack list
   3. Output shows: "ansible-fix - ALWAYS use after ansible-galaxy init"
   4. Task involves creating ansible role - ansible-fix is relevant
-  5. Read: cat ~/.claude/skills/ansible-fix/SKILL.md
+  5. Read: cat ~/.codex/skills/ansible-fix/SKILL.md
   6. SKILL.md says: "Run after ansible-galaxy init"
 
 You execute:
