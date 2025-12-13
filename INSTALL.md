@@ -1,36 +1,124 @@
-# Installing skillstack
+# Installing Skillstack
 
-## Installation
+Skillstack works with both **Codex CLI** and **Claude Code**.
 
-1. Clone the skillstack repository:
-```bash
-mkdir -p ~/.codex
-git clone https://github.com/jphetphoumy/skillstack ~/.codex/skillstack
-```
-
-2. Install prompts to codex : 
-
-
-```markdown
-mkdir -p ~/.codex/prompts/
-cp ~/.codex/skillstack/prompts/. -r ~/.codex/prompts/
-```
-
-3. Bootstrap the bundled skills (run this once after copying the repo). All CLI commands should be executed from the installed script at `~/.codex/skillstack/skillstack`:
+## Quick Install (Both Systems)
 
 ```bash
-~/.codex/skillstack/skillstack bootstrap
+# 1. Clone skillstack
+git clone https://github.com/jphetphoumy/skillstack ~/.skillstack
+
+# 2. Install skills to both Codex and Claude Code
+~/.skillstack/skillstack bootstrap --target=both
+
+# 3. (Optional) Add CLI to PATH
+ln -s ~/.skillstack/skillstack ~/.local/bin/skillstack
 ```
 
-4. Update the AGENTS.md file of this repository/directory to include the following skillstack section, if the file doesn't exist create it :
+This installs skills to:
+- `~/.codex/skills/` (for Codex CLI)
+- `~/.claude/skills/` (for Claude Code)
 
-```markdown
-## Skillstack
+## Install for Specific System Only
 
-<SKILLSTACK>
-Use `~/.codex/skillstack/skillstack` to discover and use skills (see `--help` for commands).
-You have access to skills. Skills allow you to have new capabilities.
-</SKILLSTACK>
+**Codex CLI only:**
+```bash
+~/.skillstack/skillstack bootstrap --target=codex
 ```
 
-> After bootstrapping, always invoke the CLI via `~/.codex/skillstack/skillstack <command>` so it uses the installed copy under `~/.codex`.
+**Claude Code only:**
+```bash
+~/.skillstack/skillstack bootstrap --target=claude
+```
+
+## Using Skills
+
+### With Codex CLI
+
+1. Add AGENTS.md to your project:
+```bash
+cp ~/.skillstack/templates/AGENTS.md ./AGENTS.md
+```
+
+2. Start codex:
+```bash
+codex
+```
+
+3. Codex will automatically discover and use skills based on AGENTS.md instructions.
+
+### With Claude Code
+
+Skills are automatically discovered from `~/.claude/skills/` - no setup needed!
+
+Claude Code reads SKILL.md files directly and uses them when relevant.
+
+## Checking Installed Skills
+
+```bash
+# Using skillstack CLI
+skillstack list
+
+# Or directly (works for both)
+ls -la ~/.claude/skills/
+ls -la ~/.codex/skills/
+
+# Or using Python script
+uv run ~/.skillstack/list-skills.py --format=summary
+```
+
+## Creating New Skills
+
+Use the skill-builder skill:
+
+```bash
+# View instructions
+skillstack use skill-builder
+
+# Create new skill
+~/.codex/skills/skill-builder/create_skill.sh my-new-skill "Description here"
+
+# Bootstrap to install
+skillstack bootstrap --target=both
+```
+
+## Updating
+
+```bash
+# Pull latest
+cd ~/.skillstack
+git pull
+
+# Re-install
+./skillstack bootstrap --target=both
+```
+
+## Uninstalling
+
+```bash
+# Remove skills
+rm -rf ~/.codex/skills
+rm -rf ~/.claude/skills
+
+# Remove skillstack
+rm -rf ~/.skillstack
+rm ~/.local/bin/skillstack  # if you symlinked
+```
+
+## Troubleshooting
+
+### Skills not found in Codex
+
+- Check AGENTS.md exists in your project
+- Check skills installed: `ls ~/.codex/skills/`
+- Try: `skillstack bootstrap --target=codex`
+
+### Skills not found in Claude Code
+
+- Check skills installed: `ls ~/.claude/skills/`
+- Try: `skillstack bootstrap --target=claude`
+
+### "No skills found" when listing
+
+- Run bootstrap: `skillstack bootstrap --target=both`
+- Check repo has skills: `ls ~/.skillstack/skills/`
